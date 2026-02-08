@@ -122,18 +122,20 @@ builder:
   arch: amd64
 
 accessories:
-  litestream:
-    image: litestream/litestream:0.3.13
+  postgres:
+    image: postgres:16-alpine
     host: YOUR_SERVER_IP
+    port: 5432
     volumes:
-      - "storage:/data"
+      - "postgres_data:/var/lib/postgresql/data"
     env:
       clear:
-        LITESTREAM_ACCESS_KEY_ID: YOUR_S3_KEY
-        LITESTREAM_SECRET_ACCESS_KEY: YOUR_S3_SECRET
-      files:
-        - config/litestream.yml:/etc/litestream.yml
-    cmd: replicate
+        POSTGRES_USER: industrialprofi
+        POSTGRES_DB: industrialprofi_production
+      secret:
+        - POSTGRES_PASSWORD
+    directories:
+      - postgres_data
 
 # Healthcheck
 healthcheck:
@@ -141,6 +143,8 @@ healthcheck:
   interval: 30s
   timeout: 10s
 ```
+
+**Примечание:** PostgreSQL запускается как отдельный Docker контейнер через Kamal accessories. Для production также рекомендуется настроить pgBackRest для автоматических backups (см. секцию ниже).
 
 ### 4. Секреты `.kamal/secrets`
 
@@ -154,9 +158,11 @@ export KAMAL_REGISTRY_PASSWORD="YOUR_DOCKERHUB_TOKEN"
 # Rails Master Key (из config/master.key)
 export RAILS_MASTER_KEY=$(cat config/master.key)
 
-# S3 для Litestream backups (получить на AWS/Backblaze/Cloudflare R2)
-export LITESTREAM_ACCESS_KEY_ID="YOUR_S3_KEY"
-export LITESTREAM_SECRET_ACCESS_KEY="YOUR_S3_SECRET"
+# PostgreSQL password
+export POSTGRES_PASSWORD="your_secure_postgres_password"
+
+# Database URL для Rails
+export DATABASE_URL="postgresql://industrialprofi:${POSTGRES_PASSWORD}@postgres:5432/industrialprofi_production"
 ```
 
 **Важно:** Добавить в `.gitignore`:
@@ -179,7 +185,7 @@ RUN apt-get update -qq && \
       curl \
       libjemalloc2 \
       libvips \
-      sqlite3 && \
+      postgresql-client && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 WORKDIR /rails
@@ -271,30 +277,93 @@ chmod +x bin/docker-entrypoint
 
 ---
 
-## 📦 Litestream (SQLite Backups)
+## 📦 PostgreSQL Backups (pgBackRest)
 
-### `config/litestream.yml`
+### Опция 1: Простые Backups (pg_dump)
 
-```yaml
-# config/litestream.yml
-dbs:
-  - path: /data/production.sqlite3
-    replicas:
-      - type: s3
-        bucket: industrialprofi-backups
-        path: database
-        region: eu-central-1
-        endpoint: https://YOUR_S3_ENDPOINT  # Для Backblaze B2 или Cloudflare R2
-        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
-        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
-        retention: 168h  # 7 дней
-        sync-interval: 10s
+**Автоматический backup через cron:**
+
+```bash
+# На сервере: /etc/cron.daily/postgres-backup
+#!/bin/bash
+
+BACKUP_DIR="/backups/postgres"
+DATE=$(date +%Y%m%d_%H%M%S)
+CONTAINER=$(docker ps -q -f name=industrialprofi-postgres)
+
+mkdir -p $BACKUP_DIR
+
+# Создаем dump
+docker exec $CONTAINER pg_dump -U industrialprofi industrialprofi_production | \
+  gzip > "$BACKUP_DIR/backup_$DATE.sql.gz"
+
+# Удаляем старые backups (старше 7 дней)
+find $BACKUP_DIR -name "backup_*.sql.gz" -mtime +7 -delete
+
+# Опционально: загружаем в S3
+# aws s3 cp "$BACKUP_DIR/backup_$DATE.sql.gz" s3://industrialprofi-backups/postgres/
 ```
 
-**Альтернативы S3:**
+Сделать исполняемым:
+```bash
+chmod +x /etc/cron.daily/postgres-backup
+```
+
+### Опция 2: Enterprise Backups (pgBackRest)
+
+**Для production с высокими требованиями к надежности:**
+
+```yaml
+# docker-compose.yml (добавить к существующему setup)
+services:
+  pgbackrest:
+    image: pgbackrest/pgbackrest:latest
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - backups:/var/lib/pgbackrest
+    environment:
+      PGBACKREST_STANZA: industrialprofi
+      PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
+      PGBACKREST_REPO1_RETENTION_FULL: 2
+      PGBACKREST_PG1_PATH: /var/lib/postgresql/data
+    command: backup --stanza=industrialprofi --type=full
+```
+
+**Настройка:**
+
+1. Создать stanza (первый раз):
+```bash
+docker exec pgbackrest pgbackrest --stanza=industrialprofi stanza-create
+```
+
+2. Первый full backup:
+```bash
+docker exec pgbackrest pgbackrest --stanza=industrialprofi backup --type=full
+```
+
+3. Настроить cron для инкрементальных backups:
+```bash
+# Ежедневный инкрементальный backup в 2 AM
+0 2 * * * docker exec pgbackrest pgbackrest --stanza=industrialprofi backup --type=incr
+```
+
+**Восстановление:**
+```bash
+# Остановить PostgreSQL
+docker stop industrialprofi-postgres
+
+# Восстановить из backup
+docker exec pgbackrest pgbackrest --stanza=industrialprofi restore
+
+# Запустить PostgreSQL
+docker start industrialprofi-postgres
+```
+
+**Альтернативы для хранения:**
 - **Backblaze B2:** $0.005/GB/month (дешево!)
 - **Cloudflare R2:** $0.015/GB/month (без egress fees)
 - **AWS S3:** $0.023/GB/month
+- **Hetzner Storage Box:** €3.81/month за 100GB
 
 ---
 
@@ -460,12 +529,15 @@ git commit -m "Add package-lock.json"
 ### Проблема: "Database locked"
 
 ```bash
-# SQLite занята другим процессом
-# Перезапускаем контейнер
-kamal app reboot
+# Database connection timeout
+# Проверяем, доступна ли PostgreSQL
+docker exec industrialprofi-postgres pg_isready -U industrialprofi
 
-# Проверяем что Solid Queue не висит
-kamal app exec 'bin/rails runner "puts SolidQueue::Job.count"'
+# Если проблемы с подключением, проверяем логи
+docker logs industrialprofi-postgres
+
+# Перезапускаем PostgreSQL accessory
+kamal accessory restart postgres
 ```
 
 ### Проблема: "Assets не загружаются (404)"
@@ -482,9 +554,9 @@ kamal deploy --skip-push  # Заново билдит image
 
 ## 💾 Backup & Restore
 
-### Автоматический Backup (Litestream)
+### Автоматический Backup
 
-Litestream реплицирует каждые 10 секунд автоматически в S3.
+Настройте ежедневные backups через cron (см. секцию "PostgreSQL Backups" выше).
 
 ### Ручной Backup
 
@@ -492,11 +564,12 @@ Litestream реплицирует каждые 10 секунд автомати�
 # SSH в сервер
 ssh deploy@YOUR_SERVER_IP
 
-# Копируем БД
-docker cp $(docker ps -q -f name=industrialprofi):/rails/storage/production.sqlite3 ./backup-$(date +%Y%m%d).sqlite3
+# Создаем dump PostgreSQL
+docker exec industrialprofi-postgres pg_dump -U industrialprofi industrialprofi_production | \
+  gzip > backup-$(date +%Y%m%d_%H%M%S).sql.gz
 
 # Скачиваем на локальную машину
-scp deploy@YOUR_SERVER_IP:~/backup-*.sqlite3 ./
+scp deploy@YOUR_SERVER_IP:~/backup-*.sql.gz ./
 ```
 
 ### Restore из Backup
@@ -505,10 +578,19 @@ scp deploy@YOUR_SERVER_IP:~/backup-*.sqlite3 ./
 # 1. Останавливаем приложение
 kamal app stop
 
-# 2. Копируем backup в контейнер
-docker cp backup-20260208.sqlite3 $(docker ps -q -f name=industrialprofi):/rails/storage/production.sqlite3
+# 2. Загружаем backup на сервер
+scp backup-20260208_120000.sql.gz deploy@YOUR_SERVER_IP:~/
 
-# 3. Запускаем приложение
+# 3. SSH в сервер
+ssh deploy@YOUR_SERVER_IP
+
+# 4. Восстанавливаем БД
+gunzip -c backup-20260208_120000.sql.gz | \
+  docker exec -i industrialprofi-postgres psql -U industrialprofi industrialprofi_production
+
+# 5. Запускаем приложение
+kamal app start
+```
 kamal app start
 ```
 
@@ -539,7 +621,10 @@ servers:
       traefik.http.services.industrialprofi.loadbalancer.server.port: 3000
 ```
 
-**Важно:** Для horizontal scaling нужен shared storage (S3) и PostgreSQL (вместо SQLite).
+**Важно:** Для horizontal scaling:
+- PostgreSQL должен быть на отдельном сервере (или managed service как AWS RDS)
+- Shared storage для Active Storage файлов (S3/Cloudflare R2)
+- Load balancer (Traefik уже настроен в Kamal)
 
 ---
 
@@ -549,7 +634,7 @@ servers:
 - [ ] Firewall настроен (ufw enable)
 - [ ] SSL сертификат активен (HTTPS)
 - [ ] RAILS_MASTER_KEY в секретах (не в коде)
-- [ ] Database backups работают (Litestream)
+- [ ] Database backups работают (PostgreSQL dumps или pgBackRest)
 - [ ] Регулярные обновления сервера (`apt upgrade`)
 - [ ] Non-root user для deploy
 - [ ] Rate limiting (Rack::Attack в будущем)

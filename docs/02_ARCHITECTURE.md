@@ -33,15 +33,10 @@
 - ✅ **Репликация** — встроенная master-slave для on-premise HA
 
 **Бизнес-причины (Российский рынок):**
-- 🏭 **Доверие СБ заводов** — PostgreSQL = "серьезная БД", SQLite = "игрушка"
+- 🏭 **Доверие СБ заводов** — PostgreSQL = enterprise-ready решение для промышленных систем
 - 🔗 **1С интеграция** — 1С:ЗУП работает с PostgreSQL через ODBC/JDBC (киллер-фича в РФ)
 - 🏢 **On-Premise продажи** — 800,000₽ единоразово требует enterprise DB
 - 📊 **Ростехнадзор compliance** — audit trail через `pgaudit` extension
-
-**Миграция с SQLite:**
-> ~~Изначально планировали SQLite~~, но анализ рынка СНГ показал критичность PostgreSQL с Day 1. 
-> Стоимость миграции СЕЙЧАС: +1 день разработки.  
-> Стоимость миграции ПОТОМ: +2-3 недели + downtime + риск потери клиентов.
 
 ### 3. Solid Stack (Без Redis)
 
@@ -455,9 +450,9 @@ Internet
 ```
 
 **Изменения для PostgreSQL:**
-- Убрали Litestream (только для SQLite)
-- Добавили pgBackRest для PostgreSQL backups
 - Персистентный volume для `/var/lib/postgresql/data`
+- pgBackRest для автоматических backups в S3/Hetzner Storage
+- Опциональная репликация для HA (high availability)
 
 ---
 
@@ -584,14 +579,17 @@ end
 ## 🔧 Dev vs Production Config
 
 ### Development:
-- SQLite в `:memory:` или файл
+- PostgreSQL (Docker Compose)
 - Vite HMR (Hot Module Replacement)
 - Letter Opener для email preview
+- `paper_trail` включен (для тестирования audit trail)
 
 ### Production:
-- SQLite с WAL mode
+- PostgreSQL 16 с репликацией (опционально)
 - Precompiled assets (Vite build)
 - SMTP для email (Postmark / SendGrid)
+- `pgBackRest` для backups
+- `pgaudit` для enterprise compliance (опционально)
 
 ---
 

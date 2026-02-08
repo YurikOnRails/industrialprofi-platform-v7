@@ -25,7 +25,7 @@
 
 **Что внутри:**
 - Суть продукта и ценность для клиентов
-- Технический стек (Rails 8, React 19, Inertia.js, SQLite)
+- Технический стек (Rails 8, React 19, Inertia.js, PostgreSQL 16)
 - Что включено в MVP, а что нет
 - Роли пользователей (Owner, Manager, Employee)
 - Метрики успеха
@@ -37,7 +37,7 @@
 
 **Что внутри:**
 - Принципы архитектуры (KISS, YAGNI)
-- Почему SQLite в production — это нормально
+- Почему PostgreSQL с Day 1 — это правильно
 - Solid Stack (без Redis)
 - Data Flow диаграммы
 - Multi-tenancy стратегия
@@ -144,7 +144,7 @@ React 19 + TypeScript + Inertia.js + React Flow.
 - Подготовка сервера (Ubuntu + Docker)
 - Kamal конфигурация (`config/deploy.yml`)
 - Dockerfile (multi-stage build)
-- Litestream setup (SQLite backups в S3)
+- pgBackRest setup (PostgreSQL backups в S3)
 - Первый deploy
 - Настройка домена и SSL
 - Мониторинг и логи
@@ -257,7 +257,7 @@ kamal app logs -f
 
 ### ✅ Технические:
 - **Modern Monolith** (не микросервисы)
-- **SQLite в production** (Solid Stack)
+- **PostgreSQL в production** (Enterprise-ready с Day 1)
 - **Inertia.js** (не REST API)
 - **TypeScript Strict Mode** (для AI-ассистента)
 - **Kamal 2** для deployment

@@ -742,18 +742,31 @@ end
 
 ## 🔄 PostgreSQL Преимущества
 
-**Почему сразу PostgreSQL, а не SQLite:**
+**Почему PostgreSQL с Day 1:**
 
-1. **JSONB** — быстрые запросы по `metadata`, `resources`
+1. **JSONB** — быстрые запросы по `metadata`, `resources`, `required_permit_template_ids`
 2. **GIN indexes** — полнотекстовый поиск по русским навыкам
-3. **Table partitioning** — масштабирование `versions` таблицы
-4. **pgaudit** — готовность к enterprise compliance
-5. **Concurrent writes** — 100+ сотрудников одновременно
+3. **Table partitioning** — масштабирование `versions` таблицы (audit trail)
+4. **pgaudit** — готовность к enterprise compliance (Ростехнадзор)
+5. **Concurrent writes** — 100+ сотрудников одновременно отмечают прогресс
+6. **Row-level security** — дополнительный уровень защиты multi-tenancy
+7. **Репликация** — встроенная master-slave для on-premise HA
 
-**Миграция минимальна:**
-- Gemfile: `gem 'pg'` вместо `'sqlite3'`
-- database.yml: `adapter: postgresql`
-- Все миграции совместимы (ActiveRecord абстракция)
+**Setup в проекте:**
+```ruby
+# Gemfile
+gem 'pg', '~> 1.5'
+gem 'paper_trail'  # Audit trail
+
+# config/database.yml
+production:
+  adapter: postgresql
+  encoding: unicode
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  database: industrialprofi_production
+  username: industrialprofi
+  password: <%= ENV['DATABASE_PASSWORD'] %>
+```
 
 ---
 

@@ -1161,11 +1161,11 @@ end
 
 ---
 
-### День 23: Production Deploy + Litestream Setup
+### День 23: Production Deploy + pgBackRest Setup
 
 **Задачи:**
 - [ ] Kamal config (`config/deploy.yml`)
-- [ ] Litestream config (backups в S3)
+- [ ] PostgreSQL backups setup (pg_dump cron или pgBackRest)
 - [ ] Environment variables (secrets)
 - [ ] First production deploy
 - [ ] Smoke tests на production
@@ -1181,7 +1181,7 @@ kamal app exec 'bin/rails db:seed'
 - Production открывается по https://
 - SSL сертификат работает
 - Seeds загружены (публичные roadmaps есть)
-- Litestream реплицирует в S3
+- PostgreSQL backups настроены (cron job работает)
 
 **Время:** ~8 часов
 
@@ -1235,13 +1235,10 @@ B2B SaaS для управления квалификацией промышле
 - Матрица навыков команды
 
 ## Tech Stack
-- Rails 8 + SQLite
+- Rails 8 + PostgreSQL 16
 - React 19 + Inertia.js
 - React Flow
 - Kamal 2
-
-## Deploy
-...
 ```
 
 **Landing Page:**

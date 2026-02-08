@@ -175,12 +175,13 @@
 ### Backend
 - **Framework:** Ruby on Rails 8.0.1
 - **Ruby:** 3.4.1
-- **Database:** SQLite (Production-ready с WAL)
+- **Database:** PostgreSQL 16 (Enterprise-ready с Day 1)
 - **Jobs:** Solid Queue (без Redis)
 - **Cache:** Solid Cache (без Redis)
 - **WebSockets:** Solid Cable (без Redis)
 - **Auth:** Rails 8 Authentication Generator
 - **Multi-tenancy:** `acts_as_tenant` gem
+- **Audit Trail:** `paper_trail` gem
 
 ### Frontend
 - **Framework:** React 19
